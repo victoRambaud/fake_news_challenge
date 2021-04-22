@@ -129,7 +129,7 @@ for ite in tqdm.tqdm(range(n_ite)):
 			test_n_correct += (torch.max(output,1).indices==stances).sum().item()
 			test_score += scoring(output,stances)
 
-		test_acc = 100. * test_n_correct / len(test_dataset)
+		test_acc = 100. * test_n_correct / test_dataset.get_len()
 		print(f"Test Accuracy : {test_acc}%")
 		print(f"Test score : {test_score}")
 

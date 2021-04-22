@@ -60,7 +60,7 @@ class FakeNewsDataSet(object):
 
     	# Update of ite_epoch and if it is the last shuffle and back to 0
     	if self.ite_epoch >= self.get_len():
-    		if self.shuffle: self.shuffle()
+    		if self.shuffle: self.shuffle_index()
     		print(self.ite_epoch)
 
     	heads_emb = np.transpose(heads_emb, (0, 2, 1))
@@ -74,7 +74,7 @@ class FakeNewsDataSet(object):
     def get_emb(self,x):
     	return self.vec.model[x]
 
-    def shuffle(self):
+    def shuffle_index(self):
     	print('Fake News dataset is shuffled')
     	np.random.shuffle(self.index)
     	self.ite_epoch=0

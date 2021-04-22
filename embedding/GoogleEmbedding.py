@@ -2,7 +2,9 @@ import string
 import time 
 import numpy as np
 from gensim.models import KeyedVectors
+import gensim.downloader as api
 
+print(gensim.__version__)
 def vectorize(text, vocab={}):
     opts = [i for i in text.split(' ') if len(i)>0]
 
@@ -57,7 +59,8 @@ class GoogleVectors(object):
     def load_google_vec(self):
         print("Loading Google News Vectors Embedding ...")
         t0 = time.time()
-        model = KeyedVectors.load_word2vec_format(self.path,unicode_errors='ignore', binary=True)
+        #model = KeyedVectors.load_word2vec_format(self.path,unicode_errors='ignore', binary=True)
+        model = api.load("word2vec-google-news-300")
         print(time.time() - t0)
         return model
 
@@ -94,3 +97,8 @@ if __name__ == '__main__':
     def myfunc(x):
         return gv.model[x]
     print(np.apply_along_axis(myfunc, 1, x))
+
+    from gensim.test.utils import common_texts
+    from gensim.models.doc2vec import Doc2Vec, TaggedDocument
+    documents = [TaggedDocument(doc, [i]) for i, doc in enumerate(common_texts)]
+    model = Doc2Vec(documents, vector_size=5, window=2, min_count=1, workers=4)
