@@ -4,7 +4,6 @@ import numpy as np
 from gensim.models import KeyedVectors
 import gensim.downloader as api
 
-print(gensim.__version__)
 def vectorize(text, vocab={}):
     opts = [i for i in text.split(' ') if len(i)>0]
 
@@ -50,18 +49,14 @@ def vectorize(text, vocab={}):
     return tmp
 
 class GoogleVectors(object):
-    def __init__(self, path='vectors/GoogleNews-vectors-negative300.bin'):
-        self.path = path
+    def __init__(self):
         self.model = self.load_google_vec()
         self.vocab = self.load_vocab()
         self.translator = str.maketrans('', '', string.punctuation)
 
     def load_google_vec(self):
         print("Loading Google News Vectors Embedding ...")
-        t0 = time.time()
-        #model = KeyedVectors.load_word2vec_format(self.path,unicode_errors='ignore', binary=True)
         model = api.load("word2vec-google-news-300")
-        print(time.time() - t0)
         return model
 
     def load_vocab(self):
@@ -89,7 +84,7 @@ class GoogleVectors(object):
         return e
 
 if __name__ == '__main__':
-    gv = GoogleVectors(path='embedding/vectors/GoogleNews-vectors-negative300.bin')
+    gv = GoogleVectors()
 
     t = ['the quick brown fox jumped over the lazy dog','the. quick, brown! fox,, !']
     x=gv.transform(t)

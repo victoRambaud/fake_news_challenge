@@ -7,71 +7,83 @@ from models.biLSTM import FakeNewsBiLSTM
 from models.dataloader import FakeNewsDataSet
 
 from utils.saveload import create_checkpoint, update_checkpoint
+from utils.metrics import scoring, max_scoring
 
 from embedding.GoogleEmbedding import GoogleVectors
 
 import tqdm
 import os
+import argparse
 
-TRAIN_PATH = 'data/train'
-TEST_PATH = 'data/test'
-SAVE_PATH = 'models/saves'
-CHPT_NAME = 'checkpoint.pt'
+parser = argparse.ArgumentParser(description="Train process of a Fake News Classifier")
+
+# data arguments
+parser.add_argument("--train_path","-tp", type=str, default='data/train',
+					help="Directory path with stances.csv and bodies.csv")
+parser.add_argument("--val_path","-vp", type=str, default='data/val',
+					help="Directory path with stances.csv and bodies.csv")
+# saving arguments
+parser.add_argument("--save_path","-sp", type=str, default='models/saves',
+					help="Directory path to save checkpoint model")
+parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_CNN.pt',
+					help="Checkpoint model filename (.pt file)")
+
+# classifier model arguments
+
+# text embedding model arguments
+
+# processus arguments
+parser.add_argument("--epoch","-e", type=int, default=20, help="Number of epochs")
+parser.add_argument("--batch_size","-b", type=int, default=16, help="Batch size (padding is done by batch)")
+parser.add_argument("--learning_rate","-lr", type=float, default=0.001, help="Learning rate (Adam optimizer)")
+
+
+args = parser.parse_args()
+
+TRAIN_PATH = args.train_path
+TEST_PATH = args.val_path
+SAVE_PATH = args.save_path
+CHPT_NAME = args.checkpoint_name
 PATH_CHPT = os.path.join(SAVE_PATH, CHPT_NAME)
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device {device}")
 
 os.makedirs(SAVE_PATH, exist_ok=True)
 checkpoint = create_checkpoint()
 
 # model for word to vector embedding
-model_vectors = GoogleVectors(path='embedding/vectors/GoogleNews-vectors-negative300.bin')
+model_vectors = GoogleVectors()
 
 # train dataset and dataloader
-train_dataset = FakeNewsDataSet(stances=os.path.join(TRAIN_PATH,'train_stances.csv'),
-								bodies=os.path.join(TRAIN_PATH,'train_bodies.csv'),
+train_dataset = FakeNewsDataSet(stances=os.path.join(TRAIN_PATH,'stances.csv'),
+								bodies=os.path.join(TRAIN_PATH,'bodies.csv'),
 								vec_embedding=model_vectors, shuffle=True)
 
 # test dataset and dataloader
-test_dataset = FakeNewsDataSet(stances=os.path.join(TEST_PATH,'test_stances.csv'),
-								bodies=os.path.join(TEST_PATH,'test_bodies.csv'),
+test_dataset = FakeNewsDataSet(stances=os.path.join(TEST_PATH,'stances.csv'),
+								bodies=os.path.join(TEST_PATH,'bodies.csv'),
 								vec_embedding=model_vectors)
 
-model = FakeNewsCNN(hidden_size=64)
-#model = FakeNewsBiLSTM(300,4,50,1,device)
+n_epoch = 100
+batch_size = 16
+lr = 0.001
+train_size = train_dataset.get_len()
+test_size = test_dataset.get_len()
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Training process perform on device : {device}")
+
+model = FakeNewsCNN(hidden_size=256)
+#model = FakeNewsBiLSTM(n_features=300,classes=4,hidden_size=50,num_layer=1,device=device)
 model.to(device)
 
 criterion = CrossEntropyLoss()
-lr = 0.001
 optimizer = torch.optim.Adam(model.parameters(),lr=lr)
 
-n_ite = 100000
-size_epoch = train_dataset.get_len()
-batch_size = 16
-print("------- Train Data -------")
-print(f'Number of news {train_dataset.get_len()}')
-#print(f'Number of bacth {len(train_dataloader)}')
-print("\n------- Test Data -------")
-print(f'Number of news {test_dataset.get_len()}')
-#print(f'Number of bacth {len(test_dataloader)}')
-
-def scoring(output,stances):
-	score=0.
-	labels = torch.max(output,1).indices
-	for l,s in zip(labels,stances):
-		# unrelated
-		if s == 3:
-			if l == s:
-				score += 0.25
-		# related
-		else:
-			# not unrelated
-			if l != 3:
-				score += 0.25
-			if l == s:
-				score += 0.75
-	return score
+print("** Train Data **")
+print(f'Number of news {train_size}')
+print(f'Maximum score {max_scoring(train_dataset)}')
+print("\n** Test Data **")
+print(f'Number of news {test_size}')
+print(f'Maximum score {max_scoring(test_dataset)}')
 
 epoch=0
 best_acc = 0.
@@ -79,67 +91,78 @@ train_acc_history = []
 test_acc_history = []
 train_n_correct = 0
 train_score = 0
-for ite in tqdm.tqdm(range(n_ite)):
 
-	if train_dataset.ite_epoch == 0:
-		print(f"\n----- EPOCH {epoch +1} -----")
-		epoch+=1
-		model.train()
+for epoch in range(n_epoch):
+#for ite in tqdm.tqdm(range(n_ite)):
 
-	# get batch
-	heads_emb, bodies_emb, stances = train_dataset.get_batch(batch_size)
+	#if train_dataset.ite_epoch == 0:
+	print(f"\n----- EPOCH {epoch +1} -----")
 
-	heads_emb = torch.Tensor(heads_emb).to(device)
-	bodies_emb = torch.Tensor(bodies_emb).to(device)
-	stances = torch.LongTensor(stances).to(device)
+	train_n_correct = 0
+	train_score = 0
+	test_n_correct = 0
+	test_score = 0
 
-	output = model([heads_emb,bodies_emb])
+	model.train()
+	i_sample = 0
+	while train_dataset.is_epoch == False:
+		i_sample += batch_size
+		print(f"Training samples {i_sample}/{train_size}",end='\r')
+		# get batch
+		heads_emb, bodies_emb, stances = train_dataset.get_batch(batch_size)
 
-	train_loss = criterion(output,stances)
+		heads_emb = torch.Tensor(heads_emb).to(device)
+		bodies_emb = torch.Tensor(bodies_emb).to(device)
+		stances = torch.LongTensor(stances).to(device)
 
-	optimizer.zero_grad()
-	train_loss.backward()
-	optimizer.step()
+		output = model([heads_emb,bodies_emb])
 
-	train_n_correct += (torch.max(output,1).indices==stances).sum().item()
-	train_score += scoring(output,stances)
+		train_loss = criterion(output,stances)
 
-	if train_dataset.ite_epoch == 0:
-		train_acc = 100. * train_n_correct / size_epoch
-		print(f"Train accuracy : {train_acc}%")
-		print(f"Train score : {train_score}")
-		train_n_correct = 0
-		train_score = 0
+		optimizer.zero_grad()
+		train_loss.backward()
+		optimizer.step()
 
-		model.eval()
-		test_n_correct = 0
-		test_score = 0
-		while test_dataset.ite_epoch < test_dataset.get_len():
-			# get batch
-			heads_emb, bodies_emb, stances = test_dataset.get_batch(batch_size)
+		train_n_correct += (torch.max(output,1).indices==stances).sum().item()
+		train_score += scoring(output,stances)
 
-			heads_emb = torch.Tensor(heads_emb).to(device)
-			bodies_emb = torch.Tensor(bodies_emb).to(device)
-			stances = torch.LongTensor(stances).to(device)
+	#if train_dataset.ite_epoch == 0:
+	train_acc = 100. * train_n_correct / train_size
+	print(f"Train accuracy : {train_acc}%")
+	print(f"Train score : {train_score}")
 
-			output = model([heads_emb,bodies_emb])
+	model.eval()
+	i_sample = 0
+	while test_dataset.is_epoch == False:
+		i_sample += batch_size
+		print(f"Testing samples {i_sample}/{test_size}",end='\r')
+		# get batch
+		heads_emb, bodies_emb, stances = test_dataset.get_batch(batch_size)
 
-			test_loss = criterion(output,stances)
+		heads_emb = torch.Tensor(heads_emb).to(device)
+		bodies_emb = torch.Tensor(bodies_emb).to(device)
+		stances = torch.LongTensor(stances).to(device)
 
-			test_n_correct += (torch.max(output,1).indices==stances).sum().item()
-			test_score += scoring(output,stances)
+		output = model([heads_emb,bodies_emb])
 
-		test_acc = 100. * test_n_correct / test_dataset.get_len()
-		print(f"Test Accuracy : {test_acc}%")
-		print(f"Test score : {test_score}")
+		test_loss = criterion(output,stances)
 
-		# Saving accuracy history
-		train_acc_history.append(train_acc)
-		test_acc_history.append(test_acc)
+		test_n_correct += (torch.max(output,1).indices==stances).sum().item()
+		test_score += scoring(output,stances)
 
-		if test_acc > best_acc:
-			print(epoch)
-			checkpoint = update_checkpoint(checkpoint,epoch,model.state_dict(),optimizer.state_dict(),best_acc,train_acc_history,test_acc_history)
-			best_acc = test_acc
-			torch.save(checkpoint, PATH_CHPT)
+	test_acc = 100. * test_n_correct / test_size
+	print(f"Test Accuracy : {test_acc}%")
+	print(f"Test score : {test_score}")
 
+	# Saving accuracy history
+	train_acc_history.append(train_acc)
+	test_acc_history.append(test_acc)
+
+	if test_acc > best_acc:
+		checkpoint = update_checkpoint(checkpoint,epoch,model.state_dict(),optimizer.state_dict(),best_acc,train_acc_history,test_acc_history)
+		best_acc = test_acc
+		torch.save(checkpoint, PATH_CHPT)
+
+	## specify that a new epoch must begin
+	train_dataset.is_epoch = False
+	test_dataset.is_epoch = False

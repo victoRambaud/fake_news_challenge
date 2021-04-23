@@ -32,6 +32,7 @@ class FakeNewsDataSet(object):
         self.index= np.arange(self.get_len()) 
         self.stances_label = {'agree':0,'disagree':1,'discuss':2,'unrelated':3}
         self.ite_epoch = 0
+        self.is_epoch = False
 
     def get_batch(self, batch_size):
     	heads_text = []
@@ -59,9 +60,10 @@ class FakeNewsDataSet(object):
     	bodies_emb = np.apply_along_axis(self.get_emb, 1, bodies_vec)
 
     	# Update of ite_epoch and if it is the last shuffle and back to 0
-    	if self.ite_epoch >= self.get_len():
+    	if self.ite_epoch == self.get_len():
+    		self.ite_epoch=0
+    		self.is_epoch = True
     		if self.shuffle: self.shuffle_index()
-    		print(self.ite_epoch)
 
     	heads_emb = np.transpose(heads_emb, (0, 2, 1))
     	bodies_emb = np.transpose(bodies_emb, (0, 2, 1))
@@ -75,9 +77,7 @@ class FakeNewsDataSet(object):
     	return self.vec.model[x]
 
     def shuffle_index(self):
-    	print('Fake News dataset is shuffled')
     	np.random.shuffle(self.index)
-    	self.ite_epoch=0
 
 if __name__ == '__main__':
 
