@@ -15,6 +15,7 @@ def scoring(output,stances):
 	return score
 
 # dataset is a FakeNewsDataset
+# if accuracy is 100%
 def max_scoring(dataset):
 	max_score = 0
 	for i in dataset.index:
@@ -28,3 +29,17 @@ def max_scoring(dataset):
 			max_score += 1.0
 
 	return max_score
+
+# dataset is a FakeNewsDataset
+# if every stance is predicted unrelated
+def null_scoring(dataset):
+	null_score = 0
+	l = 3
+	for i in dataset.index:
+		stance = dataset.headlines[i][2]
+		s = dataset.stances_label[stance]
+		# unrelated
+		if s == l == 3:
+			null_score += 0.25
+
+	return null_score

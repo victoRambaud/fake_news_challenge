@@ -7,7 +7,7 @@ from models.biLSTM import FakeNewsBiLSTM
 from models.dataloader import FakeNewsDataSet
 
 from utils.saveload import create_checkpoint, update_checkpoint
-from utils.metrics import scoring, max_scoring
+from utils.metrics import scoring, max_scoring, null_scoring
 
 from embedding.GoogleEmbedding import GoogleVectors
 
@@ -62,9 +62,9 @@ test_dataset = FakeNewsDataSet(stances=os.path.join(TEST_PATH,'stances.csv'),
 								bodies=os.path.join(TEST_PATH,'bodies.csv'),
 								vec_embedding=model_vectors)
 
-n_epoch = 100
-batch_size = 16
-lr = 0.001
+n_epoch = args.epoch
+batch_size = args.batch_size
+lr = args.learning_rate
 train_size = train_dataset.get_len()
 test_size = test_dataset.get_len()
 
@@ -72,7 +72,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Training process perform on device : {device}")
 
 model = FakeNewsCNN(hidden_size=256)
-#model = FakeNewsBiLSTM(n_features=300,classes=4,hidden_size=50,num_layer=1,device=device)
+#model = FakeNewsBiLSTM(n_features=300,classes=4,hidden_size=50,num_layers=1,device=device)
 model.to(device)
 
 criterion = CrossEntropyLoss()
@@ -81,9 +81,11 @@ optimizer = torch.optim.Adam(model.parameters(),lr=lr)
 print("** Train Data **")
 print(f'Number of news {train_size}')
 print(f'Maximum score {max_scoring(train_dataset)}')
-print("\n** Test Data **")
+print(f'Null score {null_scoring(train_dataset)}')
+print("\n** Val Data **")
 print(f'Number of news {test_size}')
 print(f'Maximum score {max_scoring(test_dataset)}')
+print(f'Null score {null_scoring(test_dataset)}')
 
 epoch=0
 best_acc = 0.
