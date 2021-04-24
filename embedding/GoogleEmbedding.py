@@ -92,8 +92,3 @@ if __name__ == '__main__':
     def myfunc(x):
         return gv.model[x]
     print(np.apply_along_axis(myfunc, 1, x))
-
-    from gensim.test.utils import common_texts
-    from gensim.models.doc2vec import Doc2Vec, TaggedDocument
-    documents = [TaggedDocument(doc, [i]) for i, doc in enumerate(common_texts)]
-    model = Doc2Vec(documents, vector_size=5, window=2, min_count=1, workers=4)
