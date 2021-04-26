@@ -88,7 +88,7 @@ print(f'Maximum score {max_scoring(test_dataset)}')
 print(f'Null score {null_scoring(test_dataset)}')
 
 epoch=0
-best_acc = 0.
+best_score = 0.
 train_acc_history = []
 test_acc_history = []
 train_n_correct = 0
@@ -160,9 +160,9 @@ for epoch in range(n_epoch):
 	train_acc_history.append(train_acc)
 	test_acc_history.append(test_acc)
 
-	if test_acc > best_acc:
-		checkpoint = update_checkpoint(checkpoint,epoch,model.state_dict(),optimizer.state_dict(),best_acc,train_acc_history,test_acc_history)
-		best_acc = test_acc
+	if test_score > best_score:
+		checkpoint = update_checkpoint(checkpoint,epoch,model.state_dict(),optimizer.state_dict(),test_score,train_acc_history,test_acc_history)
+		best_score = test_score
 		torch.save(checkpoint, PATH_CHPT)
 
 	## specify that a new epoch must begin
