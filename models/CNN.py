@@ -40,7 +40,7 @@ class FakeNewsCNN(nn.Module):
 
 		self.dense4 = nn.Linear(in_features=hidden_size*4,out_features=n_classes)
 
-		self.dropout = nn.Dropout(p=0.5)
+		self.dropout = nn.Dropout(p=0.3)
 		#self.avg_pool = nn.AdaptiveAvgPool1d()
 		self.logsoftmax = nn.LogSoftmax(dim=1)
 

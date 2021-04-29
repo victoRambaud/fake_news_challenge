@@ -10,10 +10,16 @@ from utils.saveload import create_checkpoint, update_checkpoint
 from utils.metrics import scoring, max_scoring, null_scoring
 
 from embedding.GoogleEmbedding import GoogleVectors
+from embedding.ELMoEmbedding import ELMoVectors
 
 import tqdm
 import os
 import argparse
+import shutil
+import yaml
+import time
+
+############################ PROCESS ARGUMENTS ##################################
 
 parser = argparse.ArgumentParser(description="Train process of a Fake News Classifier")
 
@@ -25,146 +31,261 @@ parser.add_argument("--val_path","-vp", type=str, default='data/val',
 # saving arguments
 parser.add_argument("--save_path","-sp", type=str, default='models/saves',
 					help="Directory path to save checkpoint model")
-parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_CNN.pt',
+parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_CNN',
 					help="Checkpoint model filename (.pt file)")
 
-# classifier model arguments
+# classifier and embedder model arguments
+parser.add_argument("--config_path","-cp", type=str, default='config/config_CNN.yaml',
+					help="Training process configuration path (.yaml)")
 
-# text embedding model arguments
-
-# processus arguments
-parser.add_argument("--epoch","-e", type=int, default=20, help="Number of epochs")
-parser.add_argument("--batch_size","-b", type=int, default=16, help="Batch size (padding is done by batch)")
-parser.add_argument("--learning_rate","-lr", type=float, default=0.001, help="Learning rate (Adam optimizer)")
-
+# reusme arguments
+parser.add_argument("--resume", "-r", action="store_true",
+					help="Name of the checkpoint to resume")
+parser.add_argument("--load_path","-lp", type=str, default='models/saves/checkpoint_GOOGLE_CNN',
+					help="Directory path to load checkpoint if resume is True")
+parser.add_argument("--config_name","-cfn", type=str, default='config_CNN.yaml',
+					help="Configuration name in the loaded checkpoint if resume is True")
+parser.add_argument("--acc","-a", action="store_true",
+					help="If True, use best acc as checkpoint else, the best score one (default)")
 
 args = parser.parse_args()
 
 TRAIN_PATH = args.train_path
-TEST_PATH = args.val_path
+VAL_PATH = args.val_path
 SAVE_PATH = args.save_path
-CHPT_NAME = args.checkpoint_name
-PATH_CHPT = os.path.join(SAVE_PATH, CHPT_NAME)
+RESUME = args.resume
+ACC = args.acc
 
-os.makedirs(SAVE_PATH, exist_ok=True)
-checkpoint = create_checkpoint()
+print("Resuming",RESUME)
 
-# model for word to vector embedding
-model_vectors = GoogleVectors()
+############################ PROCESS DEVICE ##################################
 
-# train dataset and dataloader
+# Get device for process
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+print(f"Process perform on device : {device}")
+
+
+############################ CHECKPOINT INITIALISATION ##################################
+
+if RESUME:
+	PATH_CHPT = args.load_path
+	# Saving path
+	score_path = os.path.join(PATH_CHPT, 'best_score.pt')
+	acc_path = os.path.join(PATH_CHPT, 'best_acc.pt')
+	# Loading of the checkpoint
+	acc_checkpoint = torch.load(acc_path, map_location=torch.device(device))
+	score_checkpoint = torch.load(score_path, map_location=torch.device(device))
+	# Checkpoint used for optimizer and network weights and, parameters and history
+	main_checkpoint = score_checkpoint
+	if ACC : main_checkpoint = acc_checkpoint
+
+else:
+	CHPT_NAME = args.checkpoint_name
+	PATH_CHPT = os.path.join(SAVE_PATH, CHPT_NAME)
+	os.makedirs(PATH_CHPT,exist_ok=True)
+	# Saving path
+	score_path = os.path.join(PATH_CHPT, 'best_score.pt')
+	acc_path = os.path.join(PATH_CHPT, 'best_acc.pt')
+	# Creation of the checkpoint
+	acc_checkpoint = create_checkpoint()
+	score_checkpoint = create_checkpoint()
+	main_checkpoint = score_checkpoint
+
+print(f"Best score checkpoint path : {score_path}")
+print(f"Best acc checkpoint path : {acc_path}")
+
+
+############################ CONFIGURATION EXTRACTION ##################################
+
+if RESUME:
+	CONFIG_NAME = args.config_name
+	CONFIG_PATH = os.path.join(PATH_CHPT,CONFIG_NAME)
+else:
+	CONFIG_PATH = args.config_path
+
+# Reading configuration of the process
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+# copy of the config in checkpoint
+if not RESUME: shutil.copy2(CONFIG_PATH, PATH_CHPT)
+
+print(f"Process configuration path : {CONFIG_PATH}")
+
+
+############################ EMBEDDER MODEL ##################################
+
+name_embedder = config['embedder'].pop('name')
+
+if name_embedder == 'GOOGLE':
+	model_vectors = GoogleVectors()
+	embedding_dim = 300
+
+if name_embedder == 'ELMO':
+	model_vectors = ELMoVectors(device)
+	embedding_dim = 1024
+
+print(f"\nEmbedder model : {name_embedder} -> dim:{embedding_dim}")
+
+
+############################ NETWORK MODEL  ##################################
+
+name_network = config['network'].pop('name')
+
+if name_network == 'CNN':
+	hidden_size = config['network'].pop('hidden_size')
+	n_classes = config['network'].pop('n_classes')
+	model = FakeNewsCNN(embedding_dim=embedding_dim,hidden_size=hidden_size,n_classes=n_classes)
+	print(f"Network model : {name_network}")
+	print(f" * hidden_size : {hidden_size}")
+	print(f" * n_classes : {n_classes}")
+
+if name_network == 'BILSTM':
+	hidden_size = config['network'].pop('hidden_size')
+	num_layers = config['network'].pop('num_layers')
+	n_classes = config['network'].pop('n_classes')
+	model = FakeNewsBiLSTM(embedding_dim=embedding_dim,hidden_size=hidden_size,num_layers=num_layers,
+						   n_classes=n_classes,device=device)
+	print(f"Network model : {name_network}")
+	print(f" * hidden_size : {hidden_size}")
+	print(f" * num_layers : {num_layers}")
+	print(f" * n_classes : {n_classes}")
+
+model.to(device)
+if RESUME: model.load_state_dict(main_checkpoint["model_state_dict"])
+
+
+############################ TRAIN AND VAL DATASET  ##################################
+
+shuffle = config['training'].pop('shuffle')
+
 train_dataset = FakeNewsDataSet(stances=os.path.join(TRAIN_PATH,'stances.csv'),
 								bodies=os.path.join(TRAIN_PATH,'bodies.csv'),
-								vec_embedding=model_vectors, shuffle=True)
-
-# test dataset and dataloader
-test_dataset = FakeNewsDataSet(stances=os.path.join(TEST_PATH,'stances.csv'),
-								bodies=os.path.join(TEST_PATH,'bodies.csv'),
-								vec_embedding=model_vectors)
-
-n_epoch = args.epoch
-batch_size = args.batch_size
-lr = args.learning_rate
+								vec_embedding=model_vectors, shuffle=shuffle)
 train_size = train_dataset.get_len()
-test_size = test_dataset.get_len()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Training process perform on device : {device}")
+# val dataset and dataloader
+val_dataset = FakeNewsDataSet(stances=os.path.join(VAL_PATH,'stances.csv'),
+								bodies=os.path.join(VAL_PATH,'bodies.csv'),
+								vec_embedding=model_vectors)
+val_size = val_dataset.get_len()
 
-model = FakeNewsCNN(hidden_size=256)
-#model = FakeNewsBiLSTM(n_features=300,classes=4,hidden_size=50,num_layers=1,device=device)
-model.to(device)
-
-criterion = CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(),lr=lr)
-
-print("** Train Data **")
+print("\n** Train Data **")
 print(f'Number of news {train_size}')
 print(f'Maximum score {max_scoring(train_dataset)}')
 print(f'Null score {null_scoring(train_dataset)}')
-print("\n** Val Data **")
-print(f'Number of news {test_size}')
-print(f'Maximum score {max_scoring(test_dataset)}')
-print(f'Null score {null_scoring(test_dataset)}')
 
-epoch=0
-best_score = 0.
-train_acc_history = []
-test_acc_history = []
-train_n_correct = 0
-train_score = 0
+print("\n** Valdation Data **")
+print(f'Number of news {val_size}')
+print(f'Maximum score {max_scoring(val_dataset)}')
+print(f'Null score {null_scoring(val_dataset)}')
 
-for epoch in range(n_epoch):
-#for ite in tqdm.tqdm(range(n_ite)):
 
-	#if train_dataset.ite_epoch == 0:
-	print(f"\n----- EPOCH {epoch +1} -----")
+############################ PROCESS LOSS OPTIMIZER AND PARAMETERS  ##################################
 
-	train_n_correct = 0
-	train_score = 0
-	test_n_correct = 0
-	test_score = 0
+# Process configuration parameters
+n_epoch = config['training'].pop('n_epoch')
+batch_size = config['training'].pop('batch_size')
+lr = config['optimizer'].pop('learning_rate')
 
-	model.train()
-	i_sample = 0
-	while train_dataset.is_epoch == False:
-		i_sample += batch_size
-		print(f"Training samples {i_sample}/{train_size}",end='\r')
-		# get batch
-		heads_emb, bodies_emb, stances = train_dataset.get_batch(batch_size)
+criterion = CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(),lr=lr)
+if RESUME: optimizer.load_state_dict(main_checkpoint["optimizer_state_dict"])
 
-		heads_emb = torch.Tensor(heads_emb).to(device)
-		bodies_emb = torch.Tensor(bodies_emb).to(device)
-		stances = torch.LongTensor(stances).to(device)
+# Checkpoint initial values
+best_score = main_checkpoint['best_score']
+best_acc = main_checkpoint['best_acc']
+train_acc_history = main_checkpoint['train_acc_history']
+val_acc_history = main_checkpoint['val_acc_history']
+train_score_history = main_checkpoint['train_score_history']
+val_score_history = main_checkpoint['val_score_history']
+start_epoch = main_checkpoint['epoch']
+end_epoch = start_epoch + n_epoch
 
-		output = model([heads_emb,bodies_emb])
 
-		train_loss = criterion(output,stances)
+############################ PROCESS LOOP  ##################################
 
-		optimizer.zero_grad()
-		train_loss.backward()
-		optimizer.step()
+for epoch in range(start_epoch,end_epoch):
 
-		train_n_correct += (torch.max(output,1).indices==stances).sum().item()
-		train_score += scoring(output,stances)
+	#*********** Epoch initialisation *********#
+	print(f"\n----- EPOCH {epoch +1}/{end_epoch} -----")
 
-	#if train_dataset.ite_epoch == 0:
-	train_acc = 100. * train_n_correct / train_size
-	print(f"Train accuracy : {train_acc}%")
-	print(f"Train score : {train_score}")
+	#*********** Training and Validation *********#
 
-	model.eval()
-	i_sample = 0
-	while test_dataset.is_epoch == False:
-		i_sample += batch_size
-		print(f"Testing samples {i_sample}/{test_size}",end='\r')
-		# get batch
-		heads_emb, bodies_emb, stances = test_dataset.get_batch(batch_size)
+	for part in ['Train','Val']:
 
-		heads_emb = torch.Tensor(heads_emb).to(device)
-		bodies_emb = torch.Tensor(bodies_emb).to(device)
-		stances = torch.LongTensor(stances).to(device)
+		n_correct = 0
+		score = 0
 
-		output = model([heads_emb,bodies_emb])
+		if part == 'Train': 
+			model.train()
+			dataset = train_dataset
+			size = train_size
 
-		test_loss = criterion(output,stances)
+		if part == 'Val': 
+			model.eval()
+			dataset = val_dataset
+			size = val_size
+	
+		i_sample = 0
+		t_0 = time.time()
+		while dataset.is_epoch == False:
+			print(f"Training samples {i_sample}/{size}",end='\r')
 
-		test_n_correct += (torch.max(output,1).indices==stances).sum().item()
-		test_score += scoring(output,stances)
+			# get batch as tensor
+			heads_emb, bodies_emb, stances = dataset.get_batch(batch_size)
 
-	test_acc = 100. * test_n_correct / test_size
-	print(f"Test Accuracy : {test_acc}%")
-	print(f"Test score : {test_score}")
+			heads_emb = heads_emb.to(device)
+			bodies_emb = bodies_emb.to(device)
+			stances = stances.to(device)
+			
+			output = model([heads_emb,bodies_emb])
 
-	# Saving accuracy history
-	train_acc_history.append(train_acc)
-	test_acc_history.append(test_acc)
+			if part == 'Train':
+				loss = criterion(output,stances)
+				optimizer.zero_grad()
+				loss.backward()
+				optimizer.step()
 
-	if test_score > best_score:
-		checkpoint = update_checkpoint(checkpoint,epoch,model.state_dict(),optimizer.state_dict(),test_score,train_acc_history,test_acc_history)
-		best_score = test_score
-		torch.save(checkpoint, PATH_CHPT)
+			n_correct += (torch.max(output,1).indices==stances).sum().item()
+			score += scoring(output,stances)
+			i_sample += batch_size
+		
+		t_n = time.time() - t_0
+		print(f'Execution time :{t_n/60}min')
+		
+		acc = 100. * n_correct / size
+		print(f"{part} accuracy : {acc}%")
+		print(f"{part} score : {score}")
 
-	## specify that a new epoch must begin
-	train_dataset.is_epoch = False
-	test_dataset.is_epoch = False
+		#*********** Checkpoint update *********#
+		
+		if part == 'Train':
+			# Saving accuracy history
+			train_acc_history.append(acc)
+			train_score_history.append(score)
+
+		if part == 'Val':
+			# Saving accuracy history
+			val_acc_history.append(acc)
+			val_score_history.append(score)
+
+			# Best score checkpoint update
+			if score > best_score:
+				score_checkpoint = update_checkpoint(score_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),score,acc,
+											   		 train_acc_history,val_acc_history,train_score_history,val_score_history)
+				best_score = score
+				torch.save(score_checkpoint, score_path)
+				print("Best score checkpoint saved")
+
+			# Best acc checkpoint update
+			if acc > best_acc:
+				acc_checkpoint = update_checkpoint(acc_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),score,acc,
+											   	   train_acc_history,val_acc_history,train_score_history,val_score_history)
+				best_acc = acc
+				torch.save(acc_checkpoint, acc_path)
+				print("Best acc checkpoint saved")
+
+		# specify that a new epoch must begin
+		dataset.is_epoch = False
+

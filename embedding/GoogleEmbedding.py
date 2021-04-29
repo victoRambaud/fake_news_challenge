@@ -3,6 +3,7 @@ import time
 import numpy as np
 from gensim.models import KeyedVectors
 import gensim.downloader as api
+import torch
 
 def vectorize(text, vocab={}):
     opts = [i for i in text.split(' ') if len(i)>0]
@@ -55,12 +56,10 @@ class GoogleVectors(object):
         self.translator = str.maketrans('', '', string.punctuation)
 
     def load_google_vec(self):
-        print("Loading Google News Vectors Embedding ...")
         model = api.load("word2vec-google-news-300")
         return model
 
     def load_vocab(self):
-        print("Loading vocabulary from embedding model ...")
         vocab = {}
         for i in range(len(self.model.index_to_key)):
             vocab[self.model.index_to_key[i]]=i
@@ -81,7 +80,12 @@ class GoogleVectors(object):
         for i in range(len(tmp)):
             v = tmp[i]
             e[i,:len(v)]=v
-        return e
+
+        emb = np.apply_along_axis(self.get_emb, 1, e)
+        return torch.Tensor(emb)
+
+    def get_emb(self,x):
+        return self.model[x]
 
 if __name__ == '__main__':
     gv = GoogleVectors()
@@ -91,4 +95,6 @@ if __name__ == '__main__':
     print(x)
     def myfunc(x):
         return gv.model[x]
-    print(np.apply_along_axis(myfunc, 1, x))
+    emb = np.apply_along_axis(myfunc, 1, x)
+    print(emb)
+    print(emb[0].shape)

@@ -16,6 +16,8 @@ def process_data(p_val=0.2):
 
     print(len(train), len(val))
 
+    # filename are different from the default
+    # rename to stances.csv in both directory for them to be default
     for dat, fn in zip([train, val],['train/train_stances.csv','val/val_stances.csv']):
         with open(fn,'w') as f:
             writer = csv.writer(f)
