@@ -1,6 +1,7 @@
 import csv
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import torch
 
 def process_bodies(file):
     tmp = {}
@@ -35,60 +36,56 @@ class FakeNewsDataSet(object):
         self.is_epoch = False
 
     def get_batch(self, batch_size):
-    	heads_text = []
-    	bodies_text = []
-    	stances = []
+        heads_text = []
+        bodies_text = []
+        stances = []
 
-    	start = self.ite_epoch
-    	end = start+batch_size
-    	batch_index=self.index[start:end]
+        start = self.ite_epoch
+        end = start+batch_size
+        batch_index=self.index[start:end]
 
-    	self.ite_epoch += len(batch_index)
+        self.ite_epoch += len(batch_index)
 
-    	for i in batch_index:
-    		head = self.headlines[i]
-    		head_text, body_id , stance = head
-    		body_text = self.bodies[body_id]
-    		heads_text.append(head_text)
-    		bodies_text.append(body_text)
-    		stances.append(self.stances_label[stance])
+        for i in batch_index:
+            head = self.headlines[i]
+            head_text, body_id , stance = head
+            body_text = self.bodies[body_id]
+            heads_text.append(head_text)
+            bodies_text.append(body_text)
+            stances.append(self.stances_label[stance])
 
-    	heads_vec = self.vec.transform(heads_text)
-    	bodies_vec = self.vec.transform(bodies_text)
+        # get embedding and stances as tensor
+        heads_vec = self.vec.transform(heads_text)
+        bodies_vec = self.vec.transform(bodies_text)
+        stances = torch.LongTensor(stances)
+        
+        heads_emb = torch.transpose(heads_vec, 1, 2)
+        bodies_emb = torch.transpose(bodies_vec, 1, 2)
 
-    	heads_emb = np.apply_along_axis(self.get_emb, 1, heads_vec)
-    	bodies_emb = np.apply_along_axis(self.get_emb, 1, bodies_vec)
+        # Update of ite_epoch and if it is the last shuffle and back to 0
+        if self.ite_epoch == self.get_len():
+            self.ite_epoch=0
+            self.is_epoch = True
+        if self.shuffle: self.shuffle_index()
 
-    	# Update of ite_epoch and if it is the last shuffle and back to 0
-    	if self.ite_epoch == self.get_len():
-    		self.ite_epoch=0
-    		self.is_epoch = True
-    		if self.shuffle: self.shuffle_index()
-
-    	heads_emb = np.transpose(heads_emb, (0, 2, 1))
-    	bodies_emb = np.transpose(bodies_emb, (0, 2, 1))
-
-    	return heads_emb, bodies_emb, stances
+        return heads_emb, bodies_emb, stances
 
     def get_len(self):
         return len(self.headlines)
 
-    def get_emb(self,x):
-    	return self.vec.model[x]
-
     def shuffle_index(self):
-    	np.random.shuffle(self.index)
+        np.random.shuffle(self.index)
 
 if __name__ == '__main__':
 
-	dataset = FakeNewsDataSet()
-	dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
-	for i,input in enumerate(dataloader):
-		print(input[0])
-		print(input[1])
-		print(input[2])
-		print("\n\n")
-		if i > 0:
-			break
+    dataset = FakeNewsDataSet()
+    dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
+    for i,input in enumerate(dataloader):
+        print(input[0])
+        print(input[1])
+        print(input[2])
+        print("\n\n")
+        if i > 0:
+            break
 
 

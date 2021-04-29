@@ -1,0 +1,15 @@
+embedder:
+  name: 'GOOGLE' # GOOGLE or ELMO
+network:
+  name: 'CNN' # NE PAS CHANGER
+  hidden_size: 256
+  n_classes: 4
+training:
+  batch_size: 8
+  shuffle: True
+  n_epoch: 30
+validation:
+  batch_size: 32
+  shuffle: False
+optimizer:
+  learning_rate: 0.001
