@@ -75,6 +75,9 @@ class FakeNewsDataSet(object):
     def get_len(self):
         return len(self.headlines)
 
+    def get_len_bodies(self):
+        return len(self.bodies)
+
     def shuffle_index(self):
         np.random.shuffle(self.index)
 

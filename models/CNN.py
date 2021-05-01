@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from torch.autograd import Variable 
 
-def max_over_time(out):
+def max(out):
     m = out.max(axis=-1).values
     return torch.reshape(m,(m.size()[0], m.size()[1]))
 
@@ -63,8 +63,8 @@ class FakeNewsCNN(nn.Module):
 		head = F.relu(self.bn_conv4(self.dropout(self.conv4(head))))
 		head = F.relu(self.bn_conv5(self.dropout(self.conv5(head))))
 
-		head_vec = max_over_time(head)
-		body_vec = max_over_time(body)
+		head_vec = max(head)
+		body_vec = max(body)
 		input_features = torch.cat((head_vec, body_vec),axis=1)
 
 		output = F.relu(self.bn_dense1(self.dense1(input_features)))

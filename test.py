@@ -18,6 +18,7 @@ from models.dataloader import FakeNewsDataSet
 
 ##### FUNCTIONS #####
 from utils.metrics import scoring, max_scoring, null_scoring
+from utils.utils import plot_history
 
 ##### SYSTEM ######
 import os
@@ -25,6 +26,7 @@ import argparse
 import shutil
 import yaml
 import time
+import tqdm
 
 max_val = 4457.25
 null_val = 1797.25 
@@ -40,7 +42,7 @@ parser.add_argument("--save_path","-sp", type=str, default='figs',
 					help="Directory path for history plot")
 parser.add_argument("--load_path","-lp", type=str, default='models/saves/checkpoint_GOOGLE_CNN',
 					help="Directory path to load checkpoint if resume is True")
-parser.add_argument("--config_name","-cfn", type=str, default='config_CNN.yaml',
+parser.add_argument("--config_name","-cfn", type=str, default='config.yaml',
 					help="Configuration name in the loaded checkpoint if resume is True")
 
 args = parser.parse_args()
@@ -64,9 +66,9 @@ PATH_CHPT = args.load_path
 # Saving path
 score_path = os.path.join(PATH_CHPT, 'best_score.pt')
 acc_path = os.path.join(PATH_CHPT, 'best_acc.pt')
-# Loading of the checkpoint
-acc_checkpoint = torch.load(acc_path, map_location=torch.device(device))
-score_checkpoint = torch.load(score_path, map_location=torch.device(device))
+# Loading of the checkpoint after for best acc and best score checkpoint
+#acc_checkpoint = torch.load(acc_path, map_location=torch.device(device))
+#score_checkpoint = torch.load(score_path, map_location=torch.device(device))
 
 print(f"Best score checkpoint path : {score_path}")
 print(f"Best acc checkpoint path : {acc_path}")
@@ -136,25 +138,27 @@ test_dataset = FakeNewsDataSet(stances=os.path.join(TEST_PATH,'stances.csv'),
 test_size = test_dataset.get_len()
 
 print("\n** Test Data **")
-print(f'Number of news {test_size}')
-print(f'Maximum score {max_scoring(test_dataset)}')
-print(f'Null score {null_scoring(test_dataset)}')
+print(f' * Number of headlines {test_size}')
+print(f' * Number of bodies {test_dataset.get_len_bodies()}')
+print(f' * Maximum score {max_scoring(test_dataset)}')
+print(f' * Null score {null_scoring(test_dataset)}')
 
 
 ############################ PROCESS PARAMETERS  ##################################
 
-batch_size = 32
+batch_size = 8
 
 
 ############################ PROCESS LOOP  ##################################
 
 for chpt in ['Accuracy','Score']:
 
-	if chpt == 'Accuracy': main_checkpoint = acc_checkpoint
-	if chpt == 'Score': main_checkpoint = score_checkpoint
+	if chpt == 'Accuracy': main_checkpoint = torch.load(acc_path, map_location=torch.device(device))
+	if chpt == 'Score': main_checkpoint = torch.load(score_path, map_location=torch.device(device))
 
 	# Load model
 	model.load_state_dict(main_checkpoint["model_state_dict"])
+	model.eval()
 
 	#*********** Version initialisation *********#
 	print(f"\n----- CHECKPOINT : Best {chpt} -----")
@@ -169,8 +173,7 @@ for chpt in ['Accuracy','Score']:
 
 	i_sample = 0
 	t_0 = time.time()
-	predictions = torch.empty(test_size, dtype=torch.int32).to(device)
-	true_labels = torch.empty(test_size, dtype=torch.int32).to(device)
+	pbar = tqdm.tqdm(total = test_size)
 	while test_dataset.is_epoch == False:
 		print(f"Training samples {i_sample}/{test_size}",end='\r')
 
@@ -184,15 +187,16 @@ for chpt in ['Accuracy','Score']:
 		output = model([heads_emb,bodies_emb])
 
 		labels = torch.max(output,1).indices
-		predictions[i_sample : i_sample + batch_size] = labels
-		predictions[i_sample : i_sample + batch_size] = stances
 
 		n_correct += (labels==stances).sum().item()
 		score += scoring(output,stances)
 		i_sample += batch_size
+		pbar.update(batch_size)
 		
 		# del useless variables from here
 		del heads_emb, bodies_emb, stances, output
+	
+	pbar.close()
 	
 	t_n = time.time() - t_0
 	print(f'Execution time :{t_n}')
@@ -204,19 +208,14 @@ for chpt in ['Accuracy','Score']:
 	# specify that a new epoch must begin
 	test_dataset.is_epoch = False
 
-	#*********** Metrics *********#
-	try:
-		confusion_matrix = metrics.confusion_matrix(true_labels, predictions, labels=[0,1,2,3])
-		metrics = metrics.precision_recall_fscore_support(true_labels, predictions, labels=name_labels)
-		metrics = 100 * np.vstack(metrics[:-1]).T
-		mean_metrics = np.mean(metrics, axis=0)
-		metrics = np.vstack((metrics, mean_metrics))
-
-		print("Confusion Matrix :\n",confusion_matrix)
-		print("Precision | Recall | F Score Metrics :", metrics)
-
-		print("Saving plots:")
-		print("  * Train and val accuracy history")
-		print("  * Train and val score history")
-	except:
-		continue
+	print("Saving plots:")
+	
+	print("  * Train and val score history")
+	plot_history(os.path.join(SAVE_PATH,f'{chpt}_score.png'),
+							  main_checkpoint['train_score_history'],main_checkpoint['val_score_history'],
+							  f'Score history from {chpt} checkpoint','Epoch','Score')
+	
+	print("  * Train and val accuracy history")
+	plot_history(os.path.join(SAVE_PATH,f'{chpt}_score.png'),
+							  main_checkpoint['train_acc_history'],main_checkpoint['val_acc_history'],
+							  f'Accuracy history from {chpt} checkpoint','Epoch','Accuracy')
