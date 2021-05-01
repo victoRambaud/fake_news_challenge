@@ -1,7 +1,4 @@
 import torch
-import numpy as np
-import csv
-import pandas as pd
 
 def scoring(output,stances):
 	score=0.

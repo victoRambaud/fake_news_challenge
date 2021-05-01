@@ -1,23 +1,33 @@
-import torch 
+##### PYTORCH ##########
+import torch
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
-from models.CNN import FakeNewsCNN
-from models.biLSTM import FakeNewsBiLSTM
-from models.dataloader import FakeNewsDataSet
+##### SKLEARN #######
+import sklearn.metrics as metrics
 
-from utils.saveload import create_checkpoint, update_checkpoint
-from utils.metrics import scoring, max_scoring, null_scoring
+##### MODELS #######
+from models.architectures import FakeNewsCNN, FakeNewsBiLSTM
 
+##### EMBEDDER ######
 from embedding.GoogleEmbedding import GoogleVectors
 from embedding.ELMoEmbedding import ELMoVectors
 
-import tqdm
+##### DATASET ######
+from models.dataloader import FakeNewsDataSet
+
+##### FUNCTIONS #####
+from utils.metrics import scoring, max_scoring, null_scoring
+
+##### SYSTEM ######
 import os
 import argparse
 import shutil
 import yaml
 import time
+
+max_val = 4457.25
+null_val = 1797.25 
 
 ############################ PROCESS ARGUMENTS ##################################
 
@@ -26,6 +36,8 @@ parser = argparse.ArgumentParser(description="Train process of a Fake News Class
 # data arguments
 parser.add_argument("--test_path","-tp", type=str, default='data/test',
 					help="Directory path with stances.csv and bodies.csv")
+parser.add_argument("--save_path","-sp", type=str, default='figs',
+					help="Directory path for history plot")
 parser.add_argument("--load_path","-lp", type=str, default='models/saves/checkpoint_GOOGLE_CNN',
 					help="Directory path to load checkpoint if resume is True")
 parser.add_argument("--config_name","-cfn", type=str, default='config_CNN.yaml',
@@ -34,6 +46,9 @@ parser.add_argument("--config_name","-cfn", type=str, default='config_CNN.yaml',
 args = parser.parse_args()
 
 TEST_PATH = args.test_path
+SAVE_PATH = args.save_path
+
+os.makedirs(SAVE_PATH,exist_ok=True)
 
 ############################ PROCESS DEVICE ##################################
 
@@ -76,11 +91,12 @@ name_embedder = config['embedder'].pop('name')
 
 if name_embedder == 'GOOGLE':
 	model_vectors = GoogleVectors()
-	embedding_dim = 300
+	embedding_dim = model_vectors.get_embedding_size()
 
 if name_embedder == 'ELMO':
-	model_vectors = ELMoVectors(device)
-	embedding_dim = 1024
+	size_elmo = config['embedder'].pop('size')
+	model_vectors = ELMoVectors(size_elmo,device)
+	embedding_dim = model_vectors.get_embedding_size()
 
 print(f"\nEmbedder model : {name_embedder} -> dim:{embedding_dim}")
 
@@ -141,7 +157,10 @@ for chpt in ['Accuracy','Score']:
 	model.load_state_dict(main_checkpoint["model_state_dict"])
 
 	#*********** Version initialisation *********#
-	print(f"\n----- BEST CHECKPOINT : {chpt} -----")
+	print(f"\n----- CHECKPOINT : Best {chpt} -----")
+
+	print(f"Best accuracy Validation: {main_checkpoint['best_acc']}%")
+	print(f"Best score Validation: {main_checkpoint['best_score']} (null:{null_val} | max:{max_val})")
 
 	#*********** Testing *********#
 
@@ -150,6 +169,8 @@ for chpt in ['Accuracy','Score']:
 
 	i_sample = 0
 	t_0 = time.time()
+	predictions = torch.empty(test_size, dtype=torch.int32).to(device)
+	true_labels = torch.empty(test_size, dtype=torch.int32).to(device)
 	while test_dataset.is_epoch == False:
 		print(f"Training samples {i_sample}/{test_size}",end='\r')
 
@@ -162,17 +183,40 @@ for chpt in ['Accuracy','Score']:
 		
 		output = model([heads_emb,bodies_emb])
 
-		n_correct += (torch.max(output,1).indices==stances).sum().item()
+		labels = torch.max(output,1).indices
+		predictions[i_sample : i_sample + batch_size] = labels
+		predictions[i_sample : i_sample + batch_size] = stances
+
+		n_correct += (labels==stances).sum().item()
 		score += scoring(output,stances)
 		i_sample += batch_size
+		
+		# del useless variables from here
+		del heads_emb, bodies_emb, stances, output
 	
 	t_n = time.time() - t_0
 	print(f'Execution time :{t_n}')
 	
-	acc = 100. * n_correct / size
+	acc = 100. * n_correct / test_size
 	print(f"Accuracy : {acc}%")
 	print(f"Score : {score}")
 
 	# specify that a new epoch must begin
-	dataset.is_epoch = False
+	test_dataset.is_epoch = False
 
+	#*********** Metrics *********#
+	try:
+		confusion_matrix = metrics.confusion_matrix(true_labels, predictions, labels=[0,1,2,3])
+		metrics = metrics.precision_recall_fscore_support(true_labels, predictions, labels=name_labels)
+		metrics = 100 * np.vstack(metrics[:-1]).T
+		mean_metrics = np.mean(metrics, axis=0)
+		metrics = np.vstack((metrics, mean_metrics))
+
+		print("Confusion Matrix :\n",confusion_matrix)
+		print("Precision | Recall | F Score Metrics :", metrics)
+
+		print("Saving plots:")
+		print("  * Train and val accuracy history")
+		print("  * Train and val score history")
+	except:
+		continue

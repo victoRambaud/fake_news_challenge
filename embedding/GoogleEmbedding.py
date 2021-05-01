@@ -1,59 +1,20 @@
-import string
-import time 
-import numpy as np
-from gensim.models import KeyedVectors
-import gensim.downloader as api
 import torch
 
-def vectorize(text, vocab={}):
-    opts = [i for i in text.split(' ') if len(i)>0]
+from gensim.models import KeyedVectors
+import gensim.downloader as api
 
-    cidx = 0
-    tmp = []
-    #iterate over the entire text, construct 3/2 grams first
-    while cidx<len(opts):
-        c0 = opts[cidx]
-        if cidx+1<len(opts):
-            c1 = opts[cidx+1]
-        else:
-            c1 = False
-        if cidx+2<len(opts):
-            c2 = opts[cidx+2]
-        else:
-            c2 = False
-        if c2:
-            s = c0+'_'+c1+'_'+c2
-            if s in vocab:
-                tmp.append(vocab[s])
-                cidx+=3
-                continue
-        else:
-            pass
-        if c1:
-            s = c0+'_'+c1
-            if s in vocab:
-                tmp.append(vocab[s])
-                cidx+=2
-                continue
-        else:
-            pass
-        #no 3/2 grams, check the word
-        if c0 in vocab:
-            tmp.append(vocab[c0])
-        elif c0.lower() in vocab:
-            tmp.append(vocab[c0.lower()])
-        else:
-            #we have no token at this timestep, we could add a default?
-            tmp.append(vocab['</s>'])
-            pass
-        cidx+=1
-    return tmp
+import numpy as np
+
+import string
 
 class GoogleVectors(object):
     def __init__(self):
         self.model = self.load_google_vec()
         self.vocab = self.load_vocab()
         self.translator = str.maketrans('', '', string.punctuation)
+
+    def get_embedding_size(self):
+        return 300
 
     def load_google_vec(self):
         model = api.load("word2vec-google-news-300")
@@ -70,7 +31,7 @@ class GoogleVectors(object):
         maxlen=0
         for t in X:
             t = t.translate(self.translator)
-            v = vectorize(t, vocab=self.vocab)
+            v = self.vectorize(t, vocab=self.vocab)
             if len(v)>maxlen:
                 maxlen=len(v)
             tmp.append(v)
@@ -86,6 +47,51 @@ class GoogleVectors(object):
 
     def get_emb(self,x):
         return self.model[x]
+
+    def vectorize(self,text, vocab={}):
+        opts = [i for i in text.split(' ') if len(i)>0]
+
+        cidx = 0
+        tmp = []
+        #iterate over the entire text, construct 3/2 grams first
+        while cidx<len(opts):
+            c0 = opts[cidx]
+            if cidx+1<len(opts):
+                c1 = opts[cidx+1]
+            else:
+                c1 = False
+            if cidx+2<len(opts):
+                c2 = opts[cidx+2]
+            else:
+                c2 = False
+            if c2:
+                s = c0+'_'+c1+'_'+c2
+                if s in vocab:
+                    tmp.append(vocab[s])
+                    cidx+=3
+                    continue
+            else:
+                pass
+            if c1:
+                s = c0+'_'+c1
+                if s in vocab:
+                    tmp.append(vocab[s])
+                    cidx+=2
+                    continue
+            else:
+                pass
+            #no 3/2 grams, check the word
+            if c0 in vocab:
+                tmp.append(vocab[c0])
+            elif c0.lower() in vocab:
+                tmp.append(vocab[c0.lower()])
+            else:
+                #we have no token at this timestep, we could add a default?
+                tmp.append(vocab['</s>'])
+                pass
+            cidx+=1
+        return tmp
+
 
 if __name__ == '__main__':
     gv = GoogleVectors()

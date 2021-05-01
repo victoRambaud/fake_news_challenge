@@ -1,23 +1,29 @@
-import torch 
+##### PYTORCH ##########
+import torch
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
-from models.CNN import FakeNewsCNN
-from models.biLSTM import FakeNewsBiLSTM
-from models.dataloader import FakeNewsDataSet
+##### MODELS #######
+from models.architectures import FakeNewsCNN, FakeNewsBiLSTM
 
-from utils.saveload import create_checkpoint, update_checkpoint
-from utils.metrics import scoring, max_scoring, null_scoring
-
+##### EMBEDDER ######
 from embedding.GoogleEmbedding import GoogleVectors
 from embedding.ELMoEmbedding import ELMoVectors
 
-import tqdm
+##### DATASET ######
+from models.dataloader import FakeNewsDataSet
+
+##### FUNCTIONS #####
+from utils.saveload import create_checkpoint, update_checkpoint
+from utils.metrics import scoring, max_scoring, null_scoring
+
+##### SYSTEM ######
 import os
 import argparse
 import shutil
 import yaml
 import time
+import tqdm
 
 ############################ PROCESS ARGUMENTS ##################################
 
@@ -35,7 +41,7 @@ parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_CNN
 					help="Checkpoint model filename (.pt file)")
 
 # classifier and embedder model arguments
-parser.add_argument("--config_path","-cp", type=str, default='config/config_CNN.yaml',
+parser.add_argument("--config_path","-cp", type=str, default='config/config.yaml',
 					help="Training process configuration path (.yaml)")
 
 # reusme arguments
@@ -43,7 +49,7 @@ parser.add_argument("--resume", "-r", action="store_true",
 					help="Name of the checkpoint to resume")
 parser.add_argument("--load_path","-lp", type=str, default='models/saves/checkpoint_GOOGLE_CNN',
 					help="Directory path to load checkpoint if resume is True")
-parser.add_argument("--config_name","-cfn", type=str, default='config_CNN.yaml',
+parser.add_argument("--config_name","-cfn", type=str, default='config.yaml',
 					help="Configuration name in the loaded checkpoint if resume is True")
 parser.add_argument("--acc","-a", action="store_true",
 					help="If True, use best acc as checkpoint else, the best score one (default)")
@@ -56,7 +62,7 @@ SAVE_PATH = args.save_path
 RESUME = args.resume
 ACC = args.acc
 
-print("Resuming",RESUME)
+print(f"Resuming a training process : {RESUME}")
 
 ############################ PROCESS DEVICE ##################################
 
@@ -119,11 +125,12 @@ name_embedder = config['embedder'].pop('name')
 
 if name_embedder == 'GOOGLE':
 	model_vectors = GoogleVectors()
-	embedding_dim = 300
+	embedding_dim = model_vectors.get_embedding_size()
 
 if name_embedder == 'ELMO':
-	model_vectors = ELMoVectors(device)
-	embedding_dim = 1024
+	size_elmo = config['embedder'].pop('size')
+	model_vectors = ELMoVectors(size_elmo,device)
+	embedding_dim = model_vectors.get_embedding_size()
 
 print(f"\nEmbedder model : {name_embedder} -> dim:{embedding_dim}")
 
@@ -136,6 +143,7 @@ if name_network == 'CNN':
 	hidden_size = config['network'].pop('hidden_size')
 	n_classes = config['network'].pop('n_classes')
 	model = FakeNewsCNN(embedding_dim=embedding_dim,hidden_size=hidden_size,n_classes=n_classes)
+
 	print(f"Network model : {name_network}")
 	print(f" * hidden_size : {hidden_size}")
 	print(f" * n_classes : {n_classes}")
@@ -146,6 +154,7 @@ if name_network == 'BILSTM':
 	n_classes = config['network'].pop('n_classes')
 	model = FakeNewsBiLSTM(embedding_dim=embedding_dim,hidden_size=hidden_size,num_layers=num_layers,
 						   n_classes=n_classes,device=device)
+
 	print(f"Network model : {name_network}")
 	print(f" * hidden_size : {hidden_size}")
 	print(f" * num_layers : {num_layers}")
@@ -170,15 +179,15 @@ val_dataset = FakeNewsDataSet(stances=os.path.join(VAL_PATH,'stances.csv'),
 								vec_embedding=model_vectors)
 val_size = val_dataset.get_len()
 
-print("\n** Train Data **")
-print(f'Number of news {train_size}')
-print(f'Maximum score {max_scoring(train_dataset)}')
-print(f'Null score {null_scoring(train_dataset)}')
+print("\n-- Train Data --")
+print(f' * Number of news {train_size}')
+print(f' * Maximum score {max_scoring(train_dataset)}')
+print(f' * Null score {null_scoring(train_dataset)}')
 
-print("\n** Valdation Data **")
-print(f'Number of news {val_size}')
-print(f'Maximum score {max_scoring(val_dataset)}')
-print(f'Null score {null_scoring(val_dataset)}')
+print("\n-- Valdation Data --")
+print(f' * Number of news {val_size}')
+print(f' * Maximum score {max_scoring(val_dataset)}')
+print(f' * Null score {null_scoring(val_dataset)}')
 
 
 ############################ PROCESS LOSS OPTIMIZER AND PARAMETERS  ##################################
@@ -201,6 +210,15 @@ train_score_history = main_checkpoint['train_score_history']
 val_score_history = main_checkpoint['val_score_history']
 start_epoch = main_checkpoint['epoch']
 end_epoch = start_epoch + n_epoch
+
+print("\n-- Initial process parameters --")
+print(f" * Number epoch : {n_epoch}")
+print(f" * Start epoch : {start_epoch}")
+print(f" * End epoch : {end_epoch}")
+print(f" * Batch size : {batch_size}")
+print(f" * Adam learning rate : {lr}")
+print(f" * Val best accuracy : {best_acc}%")
+print(f" * Val best score : {best_score}")
 
 
 ############################ PROCESS LOOP  ##################################
@@ -229,8 +247,8 @@ for epoch in range(start_epoch,end_epoch):
 	
 		i_sample = 0
 		t_0 = time.time()
+		pbar = tqdm.tqdm(total = size)
 		while dataset.is_epoch == False:
-			print(f"Training samples {i_sample}/{size}",end='\r')
 
 			# get batch as tensor
 			heads_emb, bodies_emb, stances = dataset.get_batch(batch_size)
@@ -250,7 +268,13 @@ for epoch in range(start_epoch,end_epoch):
 			n_correct += (torch.max(output,1).indices==stances).sum().item()
 			score += scoring(output,stances)
 			i_sample += batch_size
-		
+			pbar.update(batch_size)
+			
+			# del useless variables from here
+			del heads_emb, bodies_emb, stances, output
+
+		pbar.close()
+
 		t_n = time.time() - t_0
 		print(f'Execution time :{t_n/60}min')
 		
@@ -272,7 +296,7 @@ for epoch in range(start_epoch,end_epoch):
 
 			# Best score checkpoint update
 			if score > best_score:
-				score_checkpoint = update_checkpoint(score_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),score,acc,
+				score_checkpoint = update_checkpoint(score_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),acc,score,
 											   		 train_acc_history,val_acc_history,train_score_history,val_score_history)
 				best_score = score
 				torch.save(score_checkpoint, score_path)
@@ -280,7 +304,7 @@ for epoch in range(start_epoch,end_epoch):
 
 			# Best acc checkpoint update
 			if acc > best_acc:
-				acc_checkpoint = update_checkpoint(acc_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),score,acc,
+				acc_checkpoint = update_checkpoint(acc_checkpoint,epoch+1,model.state_dict(),optimizer.state_dict(),acc,score,
 											   	   train_acc_history,val_acc_history,train_score_history,val_score_history)
 				best_acc = acc
 				torch.save(acc_checkpoint, acc_path)

@@ -25,10 +25,20 @@ def update_checkpoint(checkpoint,epoch,state_dict,optim_dict,best_acc,best_score
 	checkpoint["val_score_history"] = val_score_hist
 	return checkpoint
 
-if __name__== '__main__':
-	import os
+if __name__ == '__main__':
+
 	import torch
-	PATH_LOAD = '../models/saves/checkpoint_BILSTM_double.pt'
-	checkpoint = torch.load(PATH_LOAD,map_location=torch.device('cpu'))
-	print(checkpoint['epoch'],':',checkpoint['best_train_acc'])
-	print(checkpoint['epoch'],':',checkpoint['val_acc_history'][checkpoint['epoch']])
+	chpt_score = torch.load("../models/saves/checkpoint_GOOGLE_CNN2/best_score.pt",map_location=torch.device('cpu'))
+	chpt_acc = torch.load("../models/saves/checkpoint_GOOGLE_CNN2/best_acc.pt",map_location=torch.device('cpu'))
+
+	# If display is correct then the parameters in the checkpoint are ok, else they are inverted 
+	# (best_score and best_acc)
+	print("Best score checkpoint")
+	print('Epoch:',chpt_score['epoch'])
+	print("Score:",chpt_score['best_acc'])
+	print("Accuracy:",chpt_score['best_score'])
+
+	print("\nBest accuracy checkpoint")
+	print('Epoch:',chpt_acc['epoch'])
+	print("Score:",chpt_acc['best_acc'])
+	print("Accuracy:",chpt_acc['best_score'])

@@ -1,5 +1,6 @@
 embedder:
   name: 'GOOGLE' # GOOGLE or ELMO
+  size: 'Small' # For ELMO : Small, Medium or Big
 network:
   name: 'CNN' # NE PAS CHANGER
   hidden_size: 256

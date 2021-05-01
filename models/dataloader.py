@@ -1,7 +1,9 @@
-import csv
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
 import torch
+from torch.utils.data import Dataset, DataLoader
+
+import numpy as np
+
+import csv
 
 def process_bodies(file):
     tmp = {}
@@ -58,7 +60,7 @@ class FakeNewsDataSet(object):
         heads_vec = self.vec.transform(heads_text)
         bodies_vec = self.vec.transform(bodies_text)
         stances = torch.LongTensor(stances)
-        
+
         heads_emb = torch.transpose(heads_vec, 1, 2)
         bodies_emb = torch.transpose(bodies_vec, 1, 2)
 
