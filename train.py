@@ -37,7 +37,7 @@ parser.add_argument("--val_path","-vp", type=str, default='data/val',
 # saving arguments
 parser.add_argument("--save_path","-sp", type=str, default='models/saves',
 					help="Directory path to save checkpoint model")
-parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_CNN',
+parser.add_argument("--checkpoint_name","-cn", type=str, default='checkpoint_GOOGLE_CNN',
 					help="Checkpoint model filename (.pt file)")
 
 # classifier and embedder model arguments
