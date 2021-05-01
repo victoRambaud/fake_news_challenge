@@ -56,12 +56,3 @@ class ELMoVectors(object):
         for i in range(len(X)):
             X[i]=X[i].split(' ')
         return X
-
-
-if __name__ == '__main__':
-    elmov = ELMoVectors()
-
-    t = [['the quick brown fox jumped over the lazy dog','the. quick, brown! fox,, !']]
-    x=elmov.transform(t)
-    print(x)
-    print(x.shape)

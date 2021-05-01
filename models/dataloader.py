@@ -27,7 +27,7 @@ def process_headlines(file):
 
 class FakeNewsDataSet(object):
 
-    def __init__(self, stances='../data/train_stances.csv',bodies='../data/train_bodies.csv',vec_embedding=None,shuffle=False):
+    def __init__(self, stances,bodies,vec_embedding=None,shuffle=False):
         self.bodies = process_bodies(bodies)
         self.headlines = process_headlines(stances)
         self.vec=vec_embedding
@@ -80,17 +80,5 @@ class FakeNewsDataSet(object):
 
     def shuffle_index(self):
         np.random.shuffle(self.index)
-
-if __name__ == '__main__':
-
-    dataset = FakeNewsDataSet()
-    dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
-    for i,input in enumerate(dataloader):
-        print(input[0])
-        print(input[1])
-        print(input[2])
-        print("\n\n")
-        if i > 0:
-            break
 
 

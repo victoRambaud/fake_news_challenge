@@ -51,6 +51,7 @@ class FakeNewsCNN(nn.Module):
 		input_head = input[0]
 		input_body = input[1]
 
+
 		body = F.relu(self.bn_conv1(self.conv1(input_body)))
 		body = F.relu(self.bn_conv2(self.dropout(self.conv2(body))))
 		body = F.relu(self.bn_conv3(self.dropout(self.conv3(body))))

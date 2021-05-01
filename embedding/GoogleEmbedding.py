@@ -53,7 +53,6 @@ class GoogleVectors(object):
 
         cidx = 0
         tmp = []
-        #iterate over the entire text, construct 3/2 grams first
         while cidx<len(opts):
             c0 = opts[cidx]
             if cidx+1<len(opts):
@@ -80,27 +79,12 @@ class GoogleVectors(object):
                     continue
             else:
                 pass
-            #no 3/2 grams, check the word
             if c0 in vocab:
                 tmp.append(vocab[c0])
             elif c0.lower() in vocab:
                 tmp.append(vocab[c0.lower()])
             else:
-                #we have no token at this timestep, we could add a default?
                 tmp.append(vocab['</s>'])
                 pass
             cidx+=1
         return tmp
-
-
-if __name__ == '__main__':
-    gv = GoogleVectors()
-
-    t = ['the quick brown fox jumped over the lazy dog','the. quick, brown! fox,, !']
-    x=gv.transform(t)
-    print(x)
-    def myfunc(x):
-        return gv.model[x]
-    emb = np.apply_along_axis(myfunc, 1, x)
-    print(emb)
-    print(emb[0].shape)
